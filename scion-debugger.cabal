@@ -27,7 +27,8 @@ executable scion-debugger
     text             == 0.11.*,
     deepseq          >= 1.1 && < 2,
     ghc-paths        == 0.1.*,
-    transformers     >= 0.2
+    transformers     >= 0.2,
+    array            >= 0.3
   
   if impl(ghc >= 7.0)
     build-depends:

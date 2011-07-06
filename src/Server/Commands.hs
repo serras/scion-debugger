@@ -8,9 +8,10 @@ import Data.Aeson
 import qualified Data.Map as M
 import qualified Data.Text as T
 import DynFlags hiding (String)
-import GHC
+import Exception (gcatch)
+import qualified GHC
 import HscTypes
-import Scion.Debugger.CopiedFromGhci
+import Scion.Debugger.FromGhci
 
 data Command = AddPackages [String]
              | SetSourceDirs [String]
@@ -18,32 +19,36 @@ data Command = AddPackages [String]
              | RunMain [String] {- args -}
              | SetBreakpoint String {- module -} Int {- line -} Bool {- on? -}
 
-executeCommand :: Command -> Ghc Value
+executeCommand :: Command -> DebuggerM Value
 executeCommand (AddPackages _) =
   do return $ String (T.pack "ok")
 executeCommand (SetSourceDirs dirs) =
-  do dflags <- getSessionDynFlags
-     setSessionDynFlags $ dflags { importPaths = dirs }
+  do dflags <- GHC.getSessionDynFlags
+     GHC.setSessionDynFlags $ dflags { importPaths = dirs }
      return $ String (T.pack "ok")
 executeCommand (LoadMain mname) =
   (do prev_context <- GHC.getContext
-      setTargets [ Target (TargetModule (mkModuleName mname)) True Nothing ]
-      load LoadAllTargets
+      GHC.setTargets [ Target (TargetModule (GHC.mkModuleName mname)) True Nothing ]
+      GHC.load GHC.LoadAllTargets
       -- Do the "after load" as if we were GHCi
       afterLoad prev_context
       return $ String (T.pack "ok")
   )
   `gcatch`
   (\(e :: SourceError) -> return $ String (T.pack $ "error: " ++ show e))
+executeCommand (SetBreakpoint mname line on) =
+  do md <- lookupModule mname
+     done <- breakByModuleLine md line on
+     return $ Bool done
 executeCommand (RunMain args) =
   do -- Add System.Environment
-     runStmt2 ("System.Environment.withArgs " ++ show args ++ " (main)") RunToCompletion
-     return $ String (T.pack "completed") 
+     runStmt2 ("System.Environment.withArgs " ++ show args ++ " (main)") GHC.RunToCompletion
+     return $ String (T.pack "completed")
 
-runStmt2 :: String -> SingleStep -> Ghc RunResult
-runStmt2 expr step = handleSourceError (\e -> do printExceptionAndWarnings e
-                                                 return RunFailed) $ 
-                       do runStmt expr step
+runStmt2 :: String -> GHC.SingleStep -> DebuggerM GHC.RunResult
+runStmt2 expr step = handleSourceError (\e -> do GHC.printExceptionAndWarnings e
+                                                 return GHC.RunFailed) $ 
+                       do GHC.runStmt expr step
 
 instance FromJSON Command where
   parseJSON (Object v) = case M.lookup (T.pack "command") v of
