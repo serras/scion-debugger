@@ -1,0 +1,46 @@
+name:           scion-debugger
+version:        0.1
+cabal-version:  >= 1.2
+build-type:     Simple
+author:         Alejandro Serrano
+maintainer:     trupill@gmail.com
+
+Name:                scion-debugger
+Version:             0.1
+Synopsis:            Debugger part for EclipseFP
+Homepage:            https://github.com/serras/scion-debugger
+Author:              Alejandro Serrano
+Maintainer:          trupill@gmail.com
+Category:            Development
+Build-type:          Simple
+Cabal-version:       >=1.2
+
+executable scion-debugger
+  hs-source-dirs:  src
+  main-is:         Main.hs
+  build-depends:
+    base             == 4.*,
+    haskeline        >= 0.6,
+    attoparsec       >= 0.8,
+    aeson            >= 0.3.2,
+    mtl              >= 2,
+    text             == 0.11.*,
+    deepseq          >= 1.1 && < 2,
+    ghc-paths        == 0.1.*,
+    transformers     >= 0.2
+  
+  if impl(ghc >= 7.0)
+    build-depends:
+      containers     >= 0.2 && < 0.5,
+      directory      == 1.1.*,
+      filepath       == 1.2.*,
+      bytestring,
+      ghc            >= 7
+  else
+    build-depends:
+      containers     >= 0.2 && < 0.4,
+      directory      == 1.0.*,
+      filepath       == 1.1.*,
+      ghc            >= 6.10 && < 6.13
+    
+  ghc-options: -rtsopts -Wall -fno-warn-unused-do-bind -fno-warn-orphans -threaded
