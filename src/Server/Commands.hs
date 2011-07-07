@@ -79,17 +79,24 @@ afterRun (Right (GHC.RunException e)) =
   return $ object [ T.pack "result" .= T.pack "exception", T.pack "message" .= T.pack (show e) ]
 afterRun (Right (GHC.RunBreak _ names Nothing)) = do
   names_info <- getNamesInfo names
-  return $ object [ T.pack "result" .= T.pack "break"
-                  , T.pack "vars"   .= names_info
-                  , T.pack "place"  .= Null ]
+  history <- getHistory
+  history_info <- mapM getHistoryInfo history
+  return $ object [ T.pack "result"  .= T.pack "break"
+                  , T.pack "vars"    .= names_info
+                  , T.pack "place"   .= Null
+                  , T.pack "history" .= Array (fromList history_info)
+                  ]
 afterRun (Right (GHC.RunBreak th names (Just info))) = do
   names_info <- getNamesInfo names
   bid_loc <- toBreakIdAndLocation info
+  history <- getHistory
+  history_info <- mapM getHistoryInfo history
   case bid_loc of
     Nothing       -> afterRun (Right (GHC.RunBreak th names Nothing))
-    Just (_, loc) -> return $ object [ T.pack "result" .= T.pack "break"
-                                     , T.pack "vars"   .= names_info
-                                     , T.pack "place"  .= getSrcSpanInfo (breakLoc loc)
+    Just (_, loc) -> return $ object [ T.pack "result"  .= T.pack "break"
+                                     , T.pack "vars"    .= names_info
+                                     , T.pack "place"   .= getSrcSpanInfo (breakLoc loc)
+                                     , T.pack "history" .= Array (fromList history_info)
                                      ]
 
 runProtectedStatement :: DebuggerM GHC.RunResult -> DebuggerM (Either String GHC.RunResult)
@@ -103,14 +110,18 @@ getNamesInfo names =
   do let namesSorted = sortBy compareNames names
      tythings <- catMaybes `liftM` mapM GHC.lookupName namesSorted
      let things = [ident | AnId ident <- tythings]
-         names' = map (ppr . getName) things
+     getIdsInfo things
+
+getIdsInfo :: [GHC.Id] -> DebuggerM Value
+getIdsInfo things = 
+  do let names = map (ppr . getName) things
          types  = map (pprTypeForUser False . GHC.idType) things
      contents <- mapM (pprContents) things
      return $ Array $ fromList $ map (\(n, c, t) -> object [ T.pack "name"     .= T.pack (showSDocOneLine n)
                                                            , T.pack "contents" .= T.pack (showSDocOneLine c)
                                                            , T.pack "type"     .= T.pack (showSDocOneLine t)
                                                            ]) $
-                                     zip3 names' contents types
+                                     zip3 names contents types
 
 compareNames :: GHC.Name -> GHC.Name -> Ordering
 n1 `compareNames` n2 = compareWith n1 `compare` compareWith n2
@@ -130,6 +141,19 @@ getSrcSpanInfo sp = object [ T.pack "file"       .= unpackFS (GHC.srcSpanFile sp
                            , T.pack "end_line"   .= GHC.srcSpanEndLine sp
                            , T.pack "end_col"    .= GHC.srcSpanEndCol sp
                            ]
+
+getHistory :: DebuggerM [([GHC.Name], Int, GHC.SrcSpan)]
+getHistory = do (ctx:_) <- GHC.getResumeContext
+                let hist_length = (length (GHC.resumeHistory ctx)) - 1
+                history <- mapM (\_ -> GHC.back) [1 .. hist_length]
+                mapM_ (\_ -> GHC.forward) [1 .. hist_length]
+                return history
+
+getHistoryInfo :: ([GHC.Name], Int, GHC.SrcSpan) -> DebuggerM Value
+getHistoryInfo (names, _, sp) = do vars <- getNamesInfo names
+                                   return $ object [ T.pack "vars"      .= vars
+                                                   , T.pack "place"     .= getSrcSpanInfo sp
+                                                   ]
 
 instance FromJSON Command where
   parseJSON (Object v) = case M.lookup (T.pack "command") v of
