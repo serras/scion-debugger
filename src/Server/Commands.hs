@@ -23,6 +23,7 @@ import PprTyThing
 import Scion.Debugger.FromGhci
 
 data Command = AddPackages [String]
+             | AddExtensions [String]
              | SetSourceDirs [String]
              | LoadMain String {- main module -}
              | RunMain [String] {- args -}
@@ -32,8 +33,17 @@ data Command = AddPackages [String]
              | Continue
 
 executeCommand :: Command -> DebuggerM Value
-executeCommand (AddPackages _) =
-  do return $ String (T.pack "ok")
+executeCommand (AddPackages pkgs) =
+  do dflags <- GHC.getSessionDynFlags
+     let pkg_flags = map ExposePackage pkgs
+     GHC.setSessionDynFlags $ dflags { packageFlags = pkg_flags ++ (packageFlags dflags) }
+     return $ String (T.pack "ok")
+executeCommand (AddExtensions exts) =
+  do let eflags = catMaybes $ map (findExtension xFlags) exts
+     dflags <- GHC.getSessionDynFlags
+     let new_flags = foldr (flip xopt_set) dflags eflags
+     GHC.setSessionDynFlags new_flags
+     return $ String (T.pack "ok")
 executeCommand (SetSourceDirs dirs) =
   do dflags <- GHC.getSessionDynFlags
      GHC.setSessionDynFlags $ dflags { importPaths = dirs }
@@ -64,6 +74,11 @@ executeCommand Step =
 executeCommand Continue =
   do result <- runProtectedStatement $ GHC.resume (const True) GHC.RunAndLogSteps
      afterRun result
+
+findExtension :: [(String, ExtensionFlag, a)] -> String -> Maybe ExtensionFlag
+findExtension []                   _                     = Nothing
+findExtension ((name, flag, _):xs) name' | name == name' = Just flag
+                                         | otherwise     = findExtension xs name'
 
 afterRun :: Either String GHC.RunResult -> DebuggerM Value
 afterRun (Left msg) =
@@ -160,6 +175,7 @@ instance FromJSON Command where
                            Just (String e) ->
                              case T.unpack e of
                                "add-packages"    -> AddPackages <$> v .: T.pack "packages"
+                               "add-extensions"  -> AddExtensions <$> v .: T.pack "extensions"
                                "set-source-dirs" -> SetSourceDirs <$> v .: T.pack "dirs"
                                "load-main"       -> LoadMain <$> v .: T.pack "module"
                                "run-main"        -> RunMain <$> v .: T.pack "args"
