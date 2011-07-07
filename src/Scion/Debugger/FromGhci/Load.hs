@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 {-# LANGUAGE PatternGuards #-}
 
 module Scion.Debugger.FromGhci.Load where

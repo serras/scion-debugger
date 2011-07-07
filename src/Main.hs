@@ -6,11 +6,10 @@ import qualified Data.Aeson.Types as T
 import qualified Data.Attoparsec.Char8 as Atto
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
-import DynFlags (defaultDynFlags)
+import DynFlags (defaultDynFlags, dopt_set)
 import GHC
 import GHC.Paths (libdir)
 import Module
-import MonadUtils
 import Scion.Debugger.FromGhci
 import Server.Commands
 import System.Console.Haskeline
@@ -19,9 +18,12 @@ main :: IO ()
 main = defaultErrorHandler defaultDynFlags $ do
          runGhc (Just libdir) $ do
            dflags <- getSessionDynFlags
-           setSessionDynFlags $ dflags { hscTarget = HscInterpreted, ghcLink = LinkInMemory }
+           -- Set printing with Show instances
+           let show_instances = dopt_set dflags Opt_PrintEvldWithShow
+           setSessionDynFlags $ show_instances { hscTarget = HscInterpreted, ghcLink = LinkInMemory }
            prel_mod <- GHC.lookupModule (GHC.mkModuleName "Prelude") Nothing
            GHC.setContext [] [(prel_mod, Nothing)]
+           
            startDebugger debuggerLoop
                          DebuggerState { prelude    = prel_mod
                                        , break_ctr  = 0
@@ -44,7 +46,7 @@ loop = do maybeLine <- getInputLine "> "
                 Atto.Done _ value -> case T.parse parseJSON value of
                                        Error e     -> outputStrLn ("error in command: " ++ e)
                                        Success cmd -> do res <- lift $ executeCommand cmd
-                                                         outputStr $ "$$DEBUG$$"
+                                                         outputStr $ "\n$$DEBUG$$"
                                                          outputStrLn $ LBS.unpack (encode res)
           loop
 

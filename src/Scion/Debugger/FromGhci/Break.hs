@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
+
 module Scion.Debugger.FromGhci.Break where
 
 import Control.Monad
@@ -66,6 +68,15 @@ recordBreak brkLoc = do
                               breaks = (oldCounter, brkLoc) : oldActiveBreaks
                          }
       return (False, oldCounter)
+
+toBreakIdAndLocation :: GHC.BreakInfo -> DebuggerM (Maybe (Int, BreakLocation))
+toBreakIdAndLocation info = do
+  let mod = GHC.breakInfo_module info
+      nm  = GHC.breakInfo_number info
+  st <- getDebuggerState
+  return $ listToMaybe [ id_loc | id_loc@(_,loc) <- breaks st,
+                                  breakModule loc == mod,
+                                  breakTick loc == nm ]
 
 -- --------------------------------------------------------------------------
 -- Tick arrays
